@@ -34,14 +34,15 @@ using std::cout;
 using std::endl;
 using std::list;
 using std::vector;
+using std::pair;
 
 using Eigen::Matrix;
 using Eigen::Dynamic;
 using Eigen::Vector3d;
 
 
-vtkSmartPointer<vtkUnstructuredGrid> ReadUnstructuredGrid(std::string const& fileName)
-{
+vtkSmartPointer<vtkUnstructuredGrid> ReadUnstructuredGrid(
+        std::string const& fileName) {
   vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid;
   std::string extension = "";
   if (fileName.find_last_of(".") != std::string::npos)
@@ -81,32 +82,53 @@ vtkSmartPointer<vtkUnstructuredGrid> ReadUnstructuredGrid(std::string const& fil
 }
 
 template <typename T>
-void print(T& input)
-{
+void print(T& input) {
     cout << input << endl;
 }
-
-//Matrix<double, 3, Dynamic> get_normals(
-//        Matrix<double, 3, Dynamic> pc,
-//        Matrix<int64_t, 3, Dynamic> faces
-//        )
-//{
-//
-//}
 
 Vector3d get_normal_tr(const Vector3d& p1,
                        const Vector3d& p2,
                        const Vector3d& p3,
-                       int sign)
-{
+                       int sign) {
     auto v1 = p3-p2;
     auto v2 = p1-p2;
-//    return {p1(1) * (p2(2) - p3(2)) + p2(1) * (p3(2) - p1(2)) + p3(1) * (p1(2) - p2(2)),
-//            p1(0) * (p3(2) - p2(2)) + p2(0) * (p1(2) - p3(2)) + p3(0) * (p2(2) - p1(2)),
-//            p1(0) * (p2(1) - p3(1))}
     return v1.cross(v2) * sign;
 }
 
+pair<vector<Vector3d>, vector<list<Matrix<double, 3, 1>>>> get_all_normals(
+        const vector<Vector3d>& point_cloud,
+        const vector<Matrix<int64_t, 3, 1>>& faces,
+        int normal_sign) {
+    auto n_pts = point_cloud.size();
+    auto n_faces = faces.size();
+
+    auto sub_normals = vector<list<Matrix<double, 3, 1>>>(n_pts);
+
+    for(auto i = 0; i < n_faces; i++) {
+        auto tri_pts = faces[i];
+        auto tri_normal = get_normal_tr(point_cloud[tri_pts(0)],
+                                        point_cloud[tri_pts(1)],
+                                        point_cloud[tri_pts(2)],
+                                        normal_sign);
+        for(const auto point : faces[i])
+            sub_normals[point].push_back(tri_normal);
+    }
+
+    auto normals = vector<Vector3d>(n_pts);
+    for(auto i = 0; i < n_pts; i++) {
+        normals[i] = {0.0, 0.0, 0.0};
+        for(const auto& sub_normal : sub_normals[i])
+            normals[i] += sub_normal;
+        normals[i] = normals[i] / normals[i].norm();
+    }
+    return {normals, sub_normals};
+}
+
+vector<Vector3d> get_normals(const vector<Vector3d>& point_cloud,
+                             const vector<Matrix<int64_t, 3, 1>>& faces,
+                             int normal_sign) {
+    return get_all_normals(point_cloud, faces, normal_sign).first;
+}
 int main()
 {
     // Vis Pipeline ----------------------------
@@ -130,12 +152,12 @@ int main()
     auto grid = ReadUnstructuredGrid("nex_nut.vtk");
 
 //    cout << grid->GetCellType(0) << endl; // 5 is triangle
-    auto m = grid->GetNumberOfCells();
+    auto n_faces = grid->GetNumberOfCells();
     auto vtkfaces = grid->GetCells();
 
-    vector<Matrix<int64_t, 3, 1>> faces(m);
+    vector<Matrix<int64_t, 3, 1>> faces(n_faces);
 
-    for(auto i = 0; i < m; i++) {
+    for(auto i = 0; i < n_faces; i++) {
         auto idarr = vtkSmartPointer<vtkIdList>::New();
         vtkfaces->GetCellAtId(i, idarr);
         for(auto j = 0; j < 3; j++) // TRIANGLES ARE HARDCODED!!!!
@@ -145,11 +167,11 @@ int main()
 
 
     vtkSmartPointer<vtkPoints> vtkpts = grid->GetPoints();
-    auto n = vtkpts->GetNumberOfPoints();
+    auto n_pts = vtkpts->GetNumberOfPoints();
 
-    vector<Vector3d> pts(n);
+    vector<Vector3d> pts(n_pts);
 
-    for(auto i = 0; i < n; i++) {
+    for(auto i = 0; i < n_pts; i++) {
         auto p = vtkpts->GetPoint(i);
         for(auto j = 0; j < 3; j++)
             pts[i](j) = p[j];
@@ -157,37 +179,33 @@ int main()
 
 //    print(pts);
 
-    // computations start here
-    auto sub_normals = vector<list<Matrix<double, 3, 1>>>(n);
-    for(auto i = 0; i < m; i++) {
-        auto tri_pts = faces[i];
-        auto tri_normal = get_normal_tr(pts[tri_pts(0)],
-                                                 pts[tri_pts(1)],
-                                                 pts[tri_pts(2)],
-                                                 1);
-        for(const auto point : faces[i])
-            sub_normals[point].push_back(tri_normal);
+    // computations start here ----------------------------------------------
+    auto normals = get_normals(pts, faces, 1);
+
+    // CONSTANTS
+    auto m = 20;
+    auto d = 0.000015;
+    auto ce = 0.2;
+    double Tm = 0;
+
+    auto new_layer = pts;
+
+    for(auto j = 0; j < m; j++) {
+        for(auto i = 0; i < n_pts; i++)
+            new_layer[i] *= Tm;
     }
 
-    auto normals = vector<Vector3d>(n);
+    // Load normals to vtk format
     auto vtknormals = vtkSmartPointer<vtkDoubleArray>::New();
     vtknormals->SetName("Normals");
     vtknormals->SetNumberOfComponents(3);
 
-    for(auto i = 0; i < n; i++) {
-        normals[i] = {0.0, 0.0, 0.0};
-        for(const auto& it : sub_normals[i])
-            normals[i] += it;
-        normals[i] = normals[i] / normals[i].norm();
-
+    for(auto i = 0; i < n_pts; i++) {
         double arg[3] = {normals[i][0], normals[i][1], normals[i][2]};
         vtknormals->InsertNextTuple(arg);
     }
 
-//    print(n);
-//    print(m);
-//    cout << vtknormals->GetNumberOfTuples() << endl;
-
+    // Write to vtk the result
     grid->GetPointData()->AddArray(vtknormals);
 
     auto writer = vtkSmartPointer<vtkUnstructuredGridWriter>::New();
@@ -208,7 +226,8 @@ int main()
     vtkNew<vtkActor> actor;
     actor->SetMapper(mapper);
     actor->SetBackfaceProperty(backProp);
-    actor->GetProperty()->SetDiffuseColor(colors->GetColor3d("Tomato").GetData());
+    actor->GetProperty()->SetDiffuseColor(
+            colors->GetColor3d("Tomato").GetData());
     actor->GetProperty()->SetSpecular(.3);
     actor->GetProperty()->SetSpecularPower(30);
     actor->GetProperty()->EdgeVisibilityOn();
