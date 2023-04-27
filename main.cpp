@@ -96,14 +96,15 @@ void print(T& input)
 
 Vector3d get_normal_tr(const Vector3d& p1,
                        const Vector3d& p2,
-                       const Vector3d& p3)
+                       const Vector3d& p3,
+                       int sign)
 {
     auto v1 = p3-p2;
     auto v2 = p1-p2;
 //    return {p1(1) * (p2(2) - p3(2)) + p2(1) * (p3(2) - p1(2)) + p3(1) * (p1(2) - p2(2)),
 //            p1(0) * (p3(2) - p2(2)) + p2(0) * (p1(2) - p3(2)) + p3(0) * (p2(2) - p1(2)),
 //            p1(0) * (p2(1) - p3(1))}
-    return v1.cross(v2)*(-1.0);
+    return v1.cross(v2) * sign;
 }
 
 int main()
@@ -126,7 +127,7 @@ int main()
 
     // load mesh
     std::cout << "Loading... " << std::endl;
-    auto grid = ReadUnstructuredGrid("cube.vtk");
+    auto grid = ReadUnstructuredGrid("nex_nut.vtk");
 
 //    cout << grid->GetCellType(0) << endl; // 5 is triangle
     auto m = grid->GetNumberOfCells();
@@ -162,12 +163,10 @@ int main()
         auto tri_pts = faces[i];
         auto tri_normal = get_normal_tr(pts[tri_pts(0)],
                                                  pts[tri_pts(1)],
-                                                 pts[tri_pts(2)]);
-        for(const auto point : faces[i]) {
-//            cout << point << endl;
-//            cout << tri_normal << endl;
+                                                 pts[tri_pts(2)],
+                                                 1);
+        for(const auto point : faces[i])
             sub_normals[point].push_back(tri_normal);
-        }
     }
 
     auto normals = vector<Vector3d>(n);
@@ -175,32 +174,19 @@ int main()
     vtknormals->SetName("Normals");
     vtknormals->SetNumberOfComponents(3);
 
-    int counter = 0;
     for(auto i = 0; i < n; i++) {
         normals[i] = {0.0, 0.0, 0.0};
-        auto tmp = sub_normals[i].size();
-//        print(tmp);
-        counter += tmp;
-        for(const auto& it : sub_normals[i]) {
-//            if(it.norm() < 0.02)
-//                print(it);
+        for(const auto& it : sub_normals[i])
             normals[i] += it;
-//            counter++;
-        }
-        if(normals[i].norm() < 0.03)
-            print(normals[i]);
         normals[i] = normals[i] / normals[i].norm();
+
         double arg[3] = {normals[i][0], normals[i][1], normals[i][2]};
         vtknormals->InsertNextTuple(arg);
     }
 
-    print(n);
-    print(m);
-    print(counter);
-    print(normals[146]);
-    print(normals[145]);
-    print(normals[147]);
-    cout << vtknormals->GetNumberOfTuples() << endl;
+//    print(n);
+//    print(m);
+//    cout << vtknormals->GetNumberOfTuples() << endl;
 
     grid->GetPointData()->AddArray(vtknormals);
 
