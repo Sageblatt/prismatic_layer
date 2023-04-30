@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
 
-set(CMAKE_CXX_FLAGS "-std=c++11 -g -O2")
+set(CMAKE_CXX_FLAGS "-std=c++11 -g -Og")
 
 project(prismatic_layer)
 add_executable(prism_layer main.cpp)
