@@ -1,7 +1,5 @@
 #include "Grid.h"
 
-#include <iostream>
-
 #include <vtkUnstructuredGrid.h>
 #include <vtkUnstructuredGridReader.h>
 #include <vtkXMLUnstructuredGridReader.h>
@@ -159,7 +157,10 @@ void Grid::constructPL(unsigned layers_amount,
     assert(multiplier > 0);
     assert(base > 0);
     assert(tau > 0);
+    assert(layers_amount > 2);
+
     processed_pc.clear();
+    processed_pc.reserve(n_pts * layers_amount);
 
     auto normals = getNormals(initial_pc);
     auto new_layer = initial_pc;
@@ -182,6 +183,7 @@ void Grid::constructPL(unsigned layers_amount,
 void Grid::exportPLToVTK(const string& filename) {
     auto vtk_grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
     auto vtk_pts = vtkSmartPointer<vtkPoints>::New();
+    vtk_pts->Allocate(processed_pc.size());
     for (auto const & pt : processed_pc)
         vtk_pts->InsertNextPoint(pt[0], pt[1], pt[2]);
 
@@ -190,10 +192,13 @@ void Grid::exportPLToVTK(const string& filename) {
     auto cells_size = n_faces; // Amount of cells in 1 layer
     auto offset = n_pts; // Amount of points in 1 layer
     unsigned n_layers = processed_pc.size() / n_pts;
+    index_t n_cells = cells_size * (n_layers - 1);
 
-    for (index_t i = 0; i < cells_size * (n_layers - 1); i++) {
+    vtk_grid->AllocateExact(n_cells,n_cells * 6);
+
+    auto prism = vtkSmartPointer<vtkWedge>::New();
+    for (index_t i = 0; i < n_cells; i++) {
         auto layer = i / cells_size;
-        auto prism = vtkSmartPointer<vtkWedge>::New();
         prism->GetPointIds()->SetId(0,
                                     faces[i - layer*cells_size][0] + layer * offset);
         prism->GetPointIds()->SetId(1,
@@ -222,6 +227,7 @@ void Grid::exportNormalsToVTK(const string& filename) {
     vtk_normals->SetNumberOfComponents(3);
 
     vtkSmartPointer<vtkPoints> vtk_points = vtkSmartPointer<vtkPoints>::New();
+    vtk_points->Allocate(initial_pc.size());
 
     for (index_t i = 0; i < n_pts; i++) {
         vtk_points->InsertNextPoint(initial_pc[i][0],
@@ -235,8 +241,8 @@ void Grid::exportNormalsToVTK(const string& filename) {
     ug->SetPoints(vtk_points);
     ug->GetPointData()->AddArray(vtk_normals);
 
+    auto triangle = vtkSmartPointer<vtkTriangle>::New();
     for(index_t i = 0; i < n_faces; i++) {
-        auto triangle = vtkSmartPointer<vtkTriangle>::New();
         triangle->GetPointIds()->SetId(0, faces[i][0]);
         triangle->GetPointIds()->SetId(1, faces[i][1]);
         triangle->GetPointIds()->SetId(2, faces[i][2]);
