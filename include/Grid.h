@@ -40,7 +40,10 @@ private:
             const vector<Matrix<double, 3, 1>>& normals,
             double tau,
             unsigned iter,
-            double H);
+            double H) const;
+
+    vector<Vector3d> laplaceNormalsSmooth(const vector<Vector3d>& normals,
+                                          double tau, unsigned iter) const;
 
 public:
     explicit Grid(const string& filename, short int normal_sign);

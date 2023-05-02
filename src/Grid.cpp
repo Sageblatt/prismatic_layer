@@ -109,14 +109,15 @@ vector<Vector3d> Grid::laplacePointsSmooth(const vector<Vector3d>& points,
                                            const vector<Matrix<double, 3, 1>>& normals,
                                            double tau,
                                            unsigned iter,
-                                           double H) {
+                                           double H) const {
     assert(tau > 0);
     assert(H > 0);
 
     auto smoothed = points;
+    vector<Vector3d> prev_iter_pts;
 
     for (unsigned i = 0; i < iter; i++) {
-        auto prev_iter_pts = smoothed;
+        prev_iter_pts = smoothed;
         for (index_t j = 0; j < n_pts; j++) {
             auto neighbours = connectivity[j];
             auto current_point = smoothed[j];
@@ -149,6 +150,32 @@ vector<Vector3d> Grid::laplacePointsSmooth(const vector<Vector3d>& points,
     return smoothed;
 }
 
+vector<Vector3d> Grid::laplaceNormalsSmooth(const vector<Vector3d>& normals,
+                                            double tau,
+                                            unsigned int iter) const {
+    assert(tau > 0);
+    assert(normals.size() == n_pts);
+
+    auto smoothed = normals;
+    auto previous_iter = normals;
+
+    // TODO: add intersection check
+    for (unsigned i = 0; i < iter; i++) {
+        for (index_t j = 0; j < n_pts; j++) {
+            auto neighbours = connectivity[j];
+            unsigned total = 0;
+            Vector3d laplace = {0.0, 0.0, 0.0};
+            for (auto const & neighbour : neighbours) {
+                total++;
+                laplace += previous_iter[neighbour];
+            }
+            smoothed[j] = previous_iter[j] + tau *
+                                             (1.0 / total * laplace - previous_iter[j]);
+        }
+    }
+    return smoothed;
+}
+
 void Grid::constructPL(unsigned layers_amount,
                        double multiplier,
                        double base,
@@ -176,7 +203,7 @@ void Grid::constructPL(unsigned layers_amount,
         processed_pc.insert(processed_pc.end(), new_layer.begin(), new_layer.end());
         Tm = pow(1 + base, j) * multiplier;
         normals = getNormals(new_layer);
-        // TODO: smoothing normals
+        normals = laplaceNormalsSmooth(normals, tau, iters_amount);
     }
 }
 
